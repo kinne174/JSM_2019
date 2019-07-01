@@ -73,6 +73,10 @@ nlp = spacy.load('en_core_web_md', disable=['ner', 'parser'])
 
 def doc_to_spans(list_of_texts, join_string=' ||| '):
     # https://towardsdatascience.com/a-couple-tricks-for-using-spacy-at-scale-54affd8326cf
+    '''
+    need to break up the text list in case it is too big, by characters so maybe do every 1000 sentences or so with
+    try catch statement
+    '''
     stripped_string = join_string.strip()
     all_docs = nlp(join_string.join(list_of_texts))
     split_inds = [i for i, token in enumerate(all_docs) if token.text == stripped_string] + [len(all_docs)]
