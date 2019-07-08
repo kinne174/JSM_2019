@@ -67,86 +67,115 @@ from itertools import combinations
 based on a .txt file of sentences separated by '\n' run through them and save them to a list of spacy Docs. Then can get
 a count of lemmitizations in each sentence and how those counts relate to interword counts to get how to define edges
 in the graph network, also need a way to define the vector-nodes in the graph network
+
+7/2 - wrap these in a function that slowly builds up the idx by taking chunks of the sentences and gets counts etc.
+      instead of loading everything at once
 '''
 
-nlp = spacy.load('en_core_web_md', disable=['ner', 'parser'])
+def get_idx(sentences_filename='ARC/visualization/test_dataset.txt', spacy_language='en_core_web_sm', threshold=0.5):
+    nlp = spacy.load(spacy_language, disable=['ner', 'parser'])
 
-def doc_to_spans(list_of_texts, join_string=' ||| '):
-    # https://towardsdatascience.com/a-couple-tricks-for-using-spacy-at-scale-54affd8326cf
-    '''
-    need to break up the text list in case it is too big, by characters so maybe do every 1000 sentences or so with
-    try catch statement
-    '''
-    stripped_string = join_string.strip()
-    all_docs = nlp(join_string.join(list_of_texts))
-    split_inds = [i for i, token in enumerate(all_docs) if token.text == stripped_string] + [len(all_docs)]
-    new_docs = [all_docs[(i + 1 if i > 0 else i):j] for i, j in zip([0] + split_inds[:-1], split_inds)]
-    return new_docs
+    # load in corpus
+    os.chdir('C:/Users/Mitch/PycharmProjects')
+    # sentences_filename = 'ARC/visualization/moon_dataset.txt'
 
-# load in corpus
-os.chdir('C:/Users/Mitch/PycharmProjects')
-moon_dataset_filename = 'ARC/visualization/test_dataset.txt'
+    assert 0 <= threshold <= 1
 
-with codecs.open(moon_dataset_filename, 'r', encoding='utf-8', errors='ignore') as corpus:
-    text_list = corpus.read().splitlines()
-    # for line in corpus:
-    #     text_list.append(line)
+    num_lines = sum([1 for _ in open(sentences_filename)])
 
-docs = doc_to_spans(text_list)
+    def doc_to_spans(list_of_texts, join_string=' ||| '):
+        # https://towardsdatascience.com/a-couple-tricks-for-using-spacy-at-scale-54affd8326cf
+        num_iterations = int(np.ceil(len(list_of_texts) / 1000))
+        new_docs = []
+        for ii in range(num_iterations):
+            temp_list_of_texts = list_of_texts[ii * 1000:(ii + 1) * 1000]
+            stripped_string = join_string.strip()
+            all_docs = nlp(join_string.join(temp_list_of_texts))
+            split_inds = [i for i, token in enumerate(all_docs) if token.text == stripped_string] + [len(all_docs)]
+            new_docs.extend([all_docs[(i + 1 if i > 0 else i):j] for i, j in zip([0] + split_inds[:-1], split_inds)])
+        return new_docs
 
-def filter_docs(original_docs):
-    new_docs = []
-    # keep tokens that are not stop words, punctuation, docs that contain less than some threshold on punctuation/ numbers
-    for doc in original_docs:
-        if len(doc) < 5:  # less than 5 tokens in the doc skip it
-            continue
-        values = [(token.is_punct, token.is_digit, token.pos_ == 'SYM', not token.has_vector, token.like_url) for token in doc]
-        sums = np.sum(values, axis=0)
-        if sums[0] + sums[1] + sums[2] >= .5*len(doc):  # more than half of doc is punctuation, digits and symbols
-            continue
-        if sums[3] + sums[4] > 0:  # at least one of the tokens does not have a vector or is a url
-            continue
-        new_docs.append([token.lemma_ for token in doc if not (token.is_stop or token.is_punct)])
+    def filter_docs(original_docs):
+        new_docs = []
+        # keep tokens that are not stop words, punctuation, docs that contain less than some threshold on punctuation/ numbers
+        for doc in original_docs:
+            if len(doc) < 5:  # less than 5 tokens in the doc skip it
+                continue
+            values = [(token.is_punct, token.is_digit, token.pos_ == 'SYM', not token.has_vector, token.like_url) for
+                      token in doc]
+            sums = np.sum(values, axis=0)
+            if sums[0] + sums[1] + sums[2] >= .5 * len(doc):  # more than half of doc is punctuation, digits and symbols
+                continue
+            if sums[3] + sums[4] > 0:  # at least one of the tokens does not have a vector or is a url
+                continue
+            new_docs.append([token.lemma_ for token in doc if not (token.is_stop or token.is_punct)])
 
-    return new_docs
+        return new_docs
 
-filtered_docs = filter_docs(docs)
+    def sentence_and_word_idx(all_docs, word_idx, sentence_idx):
+        # create a dictionary with index: lemma pairs and sentences: [indices] pairs
+        flattened_docs = [t for doc in all_docs for t in set(doc)]
 
-def sentence_and_word_idx(all_docs):
-    # create a dictionary with index: lemma pairs and sentences: [indices] pairs
-    flattened_docs = [t for doc in all_docs for t in set(doc)]
-    word_idx = {}
-    for i, lemma in enumerate(flattened_docs):
-        word_idx[i] = lemma
-        word_idx[lemma] = i
+        current_word_ind = len(word_idx)
 
-    sentence_idx = {}
-    for j, sent in enumerate(all_docs):
-        sentence_idx[j] = [word_idx[l] for l in sent]
+        for lemma in flattened_docs:
+            if lemma not in word_idx:
+                word_idx[current_word_ind] = lemma
+                word_idx[lemma] = current_word_ind
+                current_word_ind += 1
 
-    return sentence_idx, word_idx
+        current_sentence_ind = len(sentence_idx)
+        for sent in all_docs:
+            sentence_idx[current_sentence_ind] = [word_idx[l] for l in sent]
+            current_sentence_ind += 1
 
-sentence_idx, word_idx = sentence_and_word_idx(filtered_docs)
+        return sentence_idx, word_idx
 
-def co_occurance(all_docs):
-    # based on a list of lists of tokens get the co occurance values for tokens
-    flattened_docs = [t for doc in all_docs for t in set(doc)]
-    all_lemma_counter = Counter(flattened_docs)
-    joined_lemmas = [x for doc in all_docs for x in combinations(set(doc), 2)]
-    joined_lemma_counter = Counter(joined_lemmas)
-    co_occ = {k: np.log((joined_lemma_counter[k] * len(all_docs))/(all_lemma_counter[k[0]] * all_lemma_counter[k[1]]))/
-                 (-1*np.log(joined_lemma_counter[k]/len(all_docs)))
-                    for k in joined_lemma_counter.keys()}
-    return co_occ
+    def co_occurance(all_docs):
+        # based on a list of lists of tokens get the co occurance values for tokens
+        flattened_docs = [t for doc in all_docs for t in set(doc)]
+        all_lemma_counter = Counter(flattened_docs)
+        joined_lemmas = [x for doc in all_docs for x in combinations(set(doc), 2)]
+        joined_lemma_counter = Counter(joined_lemmas)
+        co_occ = {
+            k: np.log((joined_lemma_counter[k] * len(all_docs)) / (all_lemma_counter[k[0]] * all_lemma_counter[k[1]])) /
+               (-1 * np.log(joined_lemma_counter[k] / len(all_docs)))
+            for k in joined_lemma_counter.keys()}
+        return co_occ
 
-co_occ_dict = co_occurance(list(sentence_idx.values()))
+    with codecs.open(sentences_filename, 'r', encoding='utf-8', errors='ignore') as corpus:
+        # text_list = corpus.read().splitlines()
+        text_list = []
+        word_idx = {}
+        sentence_idx = {}
 
-threshold = 0.5
-co_occ_list = [key for key, val in co_occ_dict.values() if val >= threshold]
+        for i, line in enumerate(corpus):
+            text_list.append(line.strip())
 
-unique_word_idx = set([idx for t in co_occ_list for idx in t])
-unique_word_vectors = {idx: nlp.vocab.get_vector(word_idx[idx]) for idx in unique_word_idx}
+            if (i % 1000 == 0 and i is not 0) or (len(text_list) == num_lines - i//1000):
 
+                docs = doc_to_spans(text_list)
+
+                filtered_docs = filter_docs(docs)
+
+                sentence_idx, word_idx = sentence_and_word_idx(filtered_docs, sentence_idx, word_idx)
+
+                text_list = []
+
+        corpus.close()
+
+    co_occ_dict = co_occurance(list(sentence_idx.values()))
+
+    co_occ_list = [key for key, val in co_occ_dict.items() if val >= threshold]
+
+    unique_word_idx = list(set([idx for t in co_occ_list for idx in t]))
+    unique_word_vectors = {idx: nlp.vocab.get_vector(word_idx[idx]) for idx in unique_word_idx}
+
+
+    return unique_word_idx, unique_word_vectors, sentence_idx, co_occ_list
+
+if __name__ == '__main__':
+   uwi, uwv, si, col = get_idx(sentences_filename='ARC/visualization/test_dataset.txt', spacy_language='en_core_web_sm', threshold=0.9)
 
 
 
