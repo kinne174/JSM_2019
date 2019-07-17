@@ -60,8 +60,10 @@ import numpy as np
 import json
 import os
 import codecs
-from collections import Counter
-from itertools import combinations
+from collections import Counter, namedtuple
+from itertools import combinations, product
+
+from q_and_a_generator import get_qa_info
 
 '''
 based on a .txt file of sentences separated by '\n' run through them and save them to a list of spacy Docs. Then can get
@@ -172,10 +174,108 @@ def get_idx(sentences_filename='ARC/visualization/test_dataset.txt', spacy_langu
     unique_word_vectors = {idx: nlp.vocab.get_vector(word_idx[idx]) for idx in unique_word_idx}
 
 
-    return unique_word_idx, unique_word_vectors, sentence_idx, co_occ_list
+    return unique_word_idx, unique_word_vectors, sentence_idx, co_occ_list, word_idx
+
+
+def get_QandA_idx(word_idx, difficulty, subset, spacy_language='en_core_web_sm'):
+    nlp = spacy.load(spacy_language, disable=['ner', 'parser'])
+
+    if not isinstance(difficulty, list) and difficulty is not 'all':
+        difficulty = [difficulty]
+    if not isinstance(subset, list) and subset is not 'all':
+        subset = [subset]
+
+    if difficulty is 'all' and subset is 'all':
+        subsets = ['TRAIN', 'TEST', 'VALIDATION']
+        difficulties = ['EASY', 'CHALLENGE']
+
+        combinations = list(product(subsets, difficulties))
+
+        qa_named_tuples = []
+
+        for c_tup in combinations:
+            qa_named_tuples.extend(get_qa_info(c_tup[1], c_tup[0]))
+
+    elif subset is 'all':
+        subsets = ['TRAIN', 'TEST', 'VALIDATION']
+        if difficulty in ['EASY', 'CHALLENGE']:
+            combinations = list(product(subsets, difficulty))
+            qa_named_tuples = []
+
+            for c_tup in combinations:
+                qa_named_tuples.extend(get_qa_info(c_tup[1], c_tup[0]))
+        else:
+            raise Exception('difficulty must be EASY or HARD')
+
+    elif difficulty is 'all':
+        difficulties = ['EASY', 'CHALLENGE']
+        if subset in ['TRAIN', 'TEST', 'VALIDATION']:
+            combinations = list(product(subset, difficulties))
+            qa_named_tuples = []
+
+            for c_tup in combinations:
+                qa_named_tuples.extend(get_qa_info(c_tup[1], c_tup[0]))
+        else:
+            raise Exception('subset must be TRAIN TEST or VALIDATION')
+
+    elif all([s in ['TRAIN', 'TEST', 'VALIDATION'] for s in subset]) and all([d in ['EASY', 'CHALLENGE'] for d in difficulty]):
+        combinations = list(product(subset, difficulty))
+        qa_named_tuples = []
+
+        for c_tup in combinations:
+            qa_named_tuples.extend(get_qa_info(c_tup[1], c_tup[0]))
+
+    else:
+        raise Exception('difficulty and or subset is wrong!')
+
+    def doc_to_spans(list_of_texts, join_string=' ||| '):
+        # https://towardsdatascience.com/a-couple-tricks-for-using-spacy-at-scale-54affd8326cf
+        num_iterations = int(np.ceil(len(list_of_texts) / 1000))
+        new_docs = []
+        for ii in range(num_iterations):
+            temp_list_of_texts = list_of_texts[ii * 1000:(ii + 1) * 1000]
+            stripped_string = join_string.strip()
+            all_docs = nlp(join_string.join(temp_list_of_texts))
+            split_inds = [i for i, token in enumerate(all_docs) if token.text == stripped_string] + [len(all_docs)]
+            new_docs.extend([all_docs[(i + 1 if i > 0 else i):j] for i, j in zip([0] + split_inds[:-1], split_inds)])
+        return new_docs
+
+    all_text = []
+    labels = []
+    for nt in qa_named_tuples:
+        all_text.extend([nt.question] + nt.choices_text)
+        correct_choice = [0]*len(nt.choices_text)
+        correct_choice[nt.choices_lablels.index(nt.answer)] = 1
+        labels.append(correct_choice)
+
+    docs = doc_to_spans(all_text)
+
+    Q_and_A_Document = namedtuple('Q_and_A_Document', 'question answers labels')
+    Q_and_A_docs = []
+
+    question_now = True
+    answers = []
+    ii = 0
+    jj = 0
+    for doc in docs:
+        if question_now:
+            question = [word_idx[token.lemma_] for token in doc if token.lemma_ in word_idx]
+            question_now = False
+        else:
+            answers.append([word_idx[token.lemma_] for token in doc if token.lemma_ in word_idx])
+            jj += 1
+
+            if jj == len(labels[ii]):
+                jj = 0
+                question_now = True
+
+                Q_and_A_docs.append(Q_and_A_Document(question=question, answers=answers, labels=labels[ii]))
+                ii += 1
+
+    return Q_and_A_docs
 
 if __name__ == '__main__':
-   uwi, uwv, si, col = get_idx(sentences_filename='ARC/visualization/test_dataset.txt', spacy_language='en_core_web_sm', threshold=0.9)
+   uwi, uwv, si, col, wids = get_idx(sentences_filename='ARC/visualization/test_dataset.txt', spacy_language='en_core_web_sm', threshold=0.9)
 
 
 
