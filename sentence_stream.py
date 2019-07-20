@@ -83,7 +83,7 @@ def get_idx(sentences_filename='ARC/visualization/test_dataset.txt', spacy_langu
 
     assert 0 <= threshold <= 1
 
-    num_lines = sum([1 for _ in open(sentences_filename)])
+    num_lines = sum([1 for _ in codecs.open(sentences_filename, 'r', encoding='utf-8', errors='ignore')])
 
     def doc_to_spans(list_of_texts, join_string=' ||| '):
         # https://towardsdatascience.com/a-couple-tricks-for-using-spacy-at-scale-54affd8326cf
@@ -131,7 +131,7 @@ def get_idx(sentences_filename='ARC/visualization/test_dataset.txt', spacy_langu
             sentence_idx[current_sentence_ind] = [word_idx[l] for l in sent]
             current_sentence_ind += 1
 
-        return sentence_idx, word_idx
+        return word_idx, sentence_idx
 
     def co_occurance(all_docs):
         # based on a list of lists of tokens get the co occurance values for tokens
@@ -160,7 +160,7 @@ def get_idx(sentences_filename='ARC/visualization/test_dataset.txt', spacy_langu
 
                 filtered_docs = filter_docs(docs)
 
-                sentence_idx, word_idx = sentence_and_word_idx(filtered_docs, sentence_idx, word_idx)
+                word_idx, sentence_idx = sentence_and_word_idx(filtered_docs, word_idx, sentence_idx)
 
                 text_list = []
 
@@ -225,6 +225,13 @@ def get_QandA_idx(word_idx, difficulty, subset, spacy_language='en_core_web_sm')
         for c_tup in combinations:
             qa_named_tuples.extend(get_qa_info(c_tup[1], c_tup[0]))
 
+    elif all([s in ['MOON'] for s in subset]) and all([d in ['MOON'] for d in difficulty]):
+        combinations = list(product(subset, difficulty))
+        qa_named_tuples = []
+
+        for c_tup in combinations:
+            qa_named_tuples.extend(get_qa_info(c_tup[1], c_tup[0], special='MOON'))
+
     else:
         raise Exception('difficulty and or subset is wrong!')
 
@@ -245,7 +252,7 @@ def get_QandA_idx(word_idx, difficulty, subset, spacy_language='en_core_web_sm')
     for nt in qa_named_tuples:
         all_text.extend([nt.question] + nt.choices_text)
         correct_choice = [0]*len(nt.choices_text)
-        correct_choice[nt.choices_lablels.index(nt.answer)] = 1
+        correct_choice[nt.choices_labels.index(nt.answer)] = 1
         labels.append(correct_choice)
 
     docs = doc_to_spans(all_text)
@@ -270,12 +277,16 @@ def get_QandA_idx(word_idx, difficulty, subset, spacy_language='en_core_web_sm')
                 question_now = True
 
                 Q_and_A_docs.append(Q_and_A_Document(question=question, answers=answers, labels=labels[ii]))
+                answers = []
                 ii += 1
 
     return Q_and_A_docs
 
 if __name__ == '__main__':
-   uwi, uwv, si, col, wids = get_idx(sentences_filename='ARC/visualization/test_dataset.txt', spacy_language='en_core_web_sm', threshold=0.9)
+   uwi, uwv, si, col, wids = get_idx(sentences_filename='ARC/visualization/moon_dataset.txt', spacy_language='en_core_web_md', threshold=0.9)
+
+   q_and_a_idx = get_QandA_idx(word_idx=wids, difficulty='EASY', subset='TRAIN')
+
 
 
 
