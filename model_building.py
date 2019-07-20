@@ -2,11 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-import dgl
-import numpy as np
-
-from graph_network import build_graph
-from sentence_stream import get_idx
+import glob
 
 torch.manual_seed(1)
 
@@ -77,27 +73,37 @@ class GCN_LSTM(nn.Module):
         self.LSTM = LSTM_sentences(embedding_dim=hidden_dim1, hidden_dim=hidden_dim2)
         self.scorer = sentence_classifier(sentence_dim=hidden_dim2, answer_dim=answer_dim)
 
-    def forward(self, g, inputs, word_idx_list):
+    def forward(self, g, inputs, sentence_idx_list):
 
         g = self.GCN(g, inputs)
 
-        assert len(word_idx_list) == 4
-        #
-        scores = torch.empty((4, 2))
-        for i in range(len(word_idx_list)):
-            word_embeds = g.nodes[word_idx_list[i]].data['embeddings']
+        scores = torch.empty((len(sentence_idx_list), 2))
+        for sentence_grouping in sentence_idx_list:
 
-            sentence_embed = self.LSTM(word_embeds)
+            assert len(sentence_grouping) == 4
 
-            sentence_embed = torch.relu(sentence_embed)
+            # ammend this to handle more than just four sentences, should be able to handle groups of four
 
-            scores[i, :] = self.scorer(sentence_embed)
+            for i in range(4):
+                word_embeds = g.nodes[sentence_grouping[i]].data['embeddings']
+
+                sentence_embed = self.LSTM(word_embeds)
+
+                sentence_embed = torch.relu(sentence_embed)
+
+                scores[i, :] = self.scorer(sentence_embed)
 
         return scores
 
 
 if __name__ == '__main__':
-    unique_word_idx, word_vectors, sentence_idx, co_occ_list = get_idx(spacy_language='en_core_web_md')
+    from graph_network import build_graph
+    from sentence_stream import get_idx, get_QandA_idx
+    from word_selection import word_selector
+
+    unique_word_idx, word_vectors, sentence_idx, co_occ_list, word_idx = get_idx(sentences_filename='ARC/visualization/moon_dataset.txt', spacy_language='en_core_web_md')
+
+    q_and_a_idx = get_QandA_idx(word_idx=word_idx, difficulty='MOON', subset='MOON')
 
     G = build_graph(edge_tuples=co_occ_list, unique_ids=unique_word_idx, embedding_dict=word_vectors)
     G_ndata = G.ndata['embeddings']
@@ -108,19 +114,30 @@ if __name__ == '__main__':
     params = network.parameters()
     optimizer = torch.optim.Adam(params, lr=0.01)
 
+    num_sentences_per_epoch = 10
+    prop_QA = .3
+
+    # use glob to see how many files in directory and then create a new one with this length to keep a log
+
     all_logits = []
     for epoch in range(30):
         # network.zero_grad()
 
-        word_idx_list = [[2*i + j for j in range(2)] for i in range(4)]
-        labels = torch.tensor([0, 0, 0, 1])
+        # insert word selection here, labels will be the same for each 4-tuple (correct, wrong, wrong, wrong)
+        training_sentences = word_selector(corpus_sentences=sentence_idx, QA_sentences=q_and_a_idx,
+                                           num_examples=num_sentences_per_epoch, prop_QA=prop_QA)
+        training_labels = [[1, 0, 0, 0] for _ in range(num_sentences_per_epoch)]
+        training_labels = [l for sublist in training_labels for l in sublist]
 
-        logits = network(g=G, inputs=G_ndata, word_idx_list=word_idx_list)
+        # word_idx_list = [[2*i + j for j in range(2)] for i in range(4)]
+        # labels = torch.tensor([0, 0, 0, 1])
+
+        logits = network(g=G, inputs=G_ndata, sentence_idx_list=training_sentences)
         # we save the logits for visualization later
         # all_logits.append(logits.detach())
         logp = F.log_softmax(logits, 1)
         # we only compute loss for labeled nodes
-        loss = loss_function(logp, labels)
+        loss = loss_function(logp, training_labels)
 
         optimizer.zero_grad()
         loss.backward()
