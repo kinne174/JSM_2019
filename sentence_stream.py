@@ -173,8 +173,19 @@ def get_idx(sentences_filename='ARC/visualization/test_dataset.txt', spacy_langu
     unique_word_idx = list(set([idx for t in co_occ_list for idx in t]))
     unique_word_vectors = {idx: nlp.vocab.get_vector(word_idx[idx]) for idx in unique_word_idx}
 
+    # update sentence and word dicts removing words that did not make the cut
+    keep_word_idx = [False] * len(word_idx)
+    updated_word_idx = {}
+    for ii, uwi in enumerate(unique_word_idx):
+        updated_word_idx[ii] = word_idx[uwi]
+        updated_word_idx[word_idx[uwi]] = ii
+        keep_word_idx[uwi] = True
 
-    return unique_word_idx, unique_word_vectors, sentence_idx, co_occ_list, word_idx
+    updated_sentence_idx = {}
+    for id, sentence_inds in sentence_idx.items():
+        updated_sentence_idx[id] = [unique_word_idx.index(ind) for ind in sentence_inds if keep_word_idx[ind]]
+
+    return unique_word_idx, unique_word_vectors, updated_sentence_idx, co_occ_list, updated_word_idx
 
 
 def get_QandA_idx(word_idx, difficulty, subset, spacy_language='en_core_web_sm'):
