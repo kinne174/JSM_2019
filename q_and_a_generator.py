@@ -2,17 +2,24 @@ import json_lines
 from collections import namedtuple
 import numpy as np
 import os
+import getpass
 
 def get_qa_info(difficulty, subset, special='', limit=0):
     limit_bool = True if np.bool(limit) else False
-    header = r'C:\Users\Mitch\PycharmProjects\ARC'
+    if getpass.getuser() == 'Mitch':
+        header = r'C:\Users\Mitch\PycharmProjects\ARC'
+    else:
+        header = '/home/kinne174/private/PythonProjects/ARC'
 
     if special == 'MOON':
-        MOON_filename = r'visualization\moon_questions.json'
+        if getpass.getuser() == 'Mitch':
+            MOON_filename = os.path.join(header, r'visualization\moon_questions.json')
+        else:
+            MOON_filename = '/home/kinne174/private/PythonProjects/JSM_2019/moon/moon_questions.json'
         MOON_allinfo = []
         MOON_document = namedtuple('MOON_document', 'id question choices_text choices_labels answer')
 
-        with open(os.path.join(header, MOON_filename), 'rb') as f:
+        with open(MOON_filename, 'rb') as f:
             for dic in json_lines.reader(f):
                 # only one dict for some reason
                 for id, item in dic.items():

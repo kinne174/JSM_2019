@@ -1,6 +1,6 @@
 import numpy as np
 
-def word_selector(corpus_sentences, QA_sentences, num_examples, prop_QA):
+def word_selector(corpus_sentences, QA_sentences, num_examples, prop_QA, leave_out_QA_indices):
     # returns ndarray with dimensions num_examples x 4 x len of longest sentence
     # question words followed by answer words without a separator
     # or first half of the sentence followed by second half of the sentence
@@ -13,7 +13,10 @@ def word_selector(corpus_sentences, QA_sentences, num_examples, prop_QA):
     num_QA_examples = int(num_examples * prop_QA)
     num_corpus_examples = num_examples - num_QA_examples
 
-    QA_indices = np.random.permutation(np.arange(len(QA_sentences)))[:num_QA_examples]
+    assert len(QA_sentences) - len(leave_out_QA_indices) >= num_QA_examples
+
+    indices_to_select_from = np.array([ind for ind in range(len(QA_sentences)) if ind not in leave_out_QA_indices])
+    QA_indices = np.random.permutation(indices_to_select_from)[:num_QA_examples]
 
     QA_combined = []
     for QA_i in QA_indices:
@@ -48,6 +51,28 @@ def word_selector(corpus_sentences, QA_sentences, num_examples, prop_QA):
 
     return all_words
 
+def test_word_selector(QA_sentences, which_examples):
+
+    assert isinstance(which_examples, list)
+    assert isinstance(QA_sentences, list)
+    assert len(which_examples) <= len(QA_sentences)
+    assert all([we <= len(QA_sentences) for we in which_examples])
+
+    QA_indices = which_examples
+
+    QA_combined = []
+    for QA_i in QA_indices:
+        current_question = QA_sentences[QA_i].question
+        current_QA_words = []
+        for a in QA_sentences[QA_i].answers:
+            current_QA_words.append(current_question + a)
+
+        current_QA_words = [qa for _, qa in sorted(zip(QA_sentences[QA_i].labels, current_QA_words), key= lambda x: x[0], reverse=True)]
+        QA_combined.append(current_QA_words)
+
+    return QA_combined
+
+
 if __name__ == '__main__':
     from sentence_stream import get_idx, get_QandA_idx
 
@@ -56,6 +81,8 @@ if __name__ == '__main__':
 
     q_and_a_idx = get_QandA_idx(word_idx=word_idx, difficulty='MOON', subset='MOON')
 
-    all_words = word_selector(corpus_sentences=sentence_idx, QA_sentences=q_and_a_idx, num_examples=10, prop_QA=.5)
+    # all_words = word_selector(corpus_sentences=sentence_idx, QA_sentences=q_and_a_idx, num_examples=10, prop_QA=.5)
+
+    test_words = test_word_selector(QA_sentences=q_and_a_idx, which_examples=list(range(5)))
 
 

@@ -58,7 +58,7 @@
 import spacy
 import numpy as np
 import json
-import os
+import os, getpass
 import codecs
 from collections import Counter, namedtuple
 from itertools import combinations, product
@@ -74,14 +74,18 @@ in the graph network, also need a way to define the vector-nodes in the graph ne
       instead of loading everything at once
 '''
 
+
 def get_idx(sentences_filename='ARC/visualization/test_dataset.txt', spacy_language='en_core_web_sm', threshold=0.5):
     nlp = spacy.load(spacy_language, disable=['ner', 'parser'])
 
     # load in corpus
-    os.chdir('C:/Users/Mitch/PycharmProjects')
+    if getpass.getuser() == 'Mitch':
+        os.chdir('C:/Users/Mitch/PycharmProjects')
+    else:
+        os.chdir('/home/kinne174/private/PythonProjects')
     # sentences_filename = 'ARC/visualization/moon_dataset.txt'
 
-    assert 0 <= threshold <= 1
+    assert 0. <= threshold <= 1.
 
     num_lines = sum([1 for _ in codecs.open(sentences_filename, 'r', encoding='utf-8', errors='ignore')])
 
@@ -163,8 +167,6 @@ def get_idx(sentences_filename='ARC/visualization/test_dataset.txt', spacy_langu
                 word_idx, sentence_idx = sentence_and_word_idx(filtered_docs, word_idx, sentence_idx)
 
                 text_list = []
-
-        corpus.close()
 
     co_occ_dict = co_occurance(list(sentence_idx.values()))
 
@@ -266,7 +268,16 @@ def get_QandA_idx(word_idx, difficulty, subset, spacy_language='en_core_web_sm')
         correct_choice[nt.choices_labels.index(nt.answer)] = 1
         labels.append(correct_choice)
 
-    docs = doc_to_spans(all_text)
+    if len(all_text) <= 1000:
+        docs = doc_to_spans(all_text)
+    else:
+        num_iterations = (len(all_text)//1000) + 1
+        docs = []
+        for ii in range(num_iterations):
+            if ii == num_iterations-1:
+                docs.extend(doc_to_spans(all_text[(ii*1000):]))
+            else:
+                docs.extend(doc_to_spans(all_text[(ii*1000):((ii+1)*1000)]))
 
     Q_and_A_Document = namedtuple('Q_and_A_Document', 'question answers labels')
     Q_and_A_docs = []
@@ -294,9 +305,9 @@ def get_QandA_idx(word_idx, difficulty, subset, spacy_language='en_core_web_sm')
     return Q_and_A_docs
 
 if __name__ == '__main__':
-   uwi, uwv, si, col, wids = get_idx(sentences_filename='ARC/visualization/moon_dataset.txt', spacy_language='en_core_web_md', threshold=0.9)
+   uwi, uwv, si, col, wids = get_idx(sentences_filename='ARC/visualization/moon_dataset.txt', spacy_language='en_core_web_sm', threshold=0.9)
 
-   q_and_a_idx = get_QandA_idx(word_idx=wids, difficulty='EASY', subset='TRAIN')
+   q_and_a_idx = get_QandA_idx(word_idx=wids, difficulty='all', subset='all')
 
 
 
