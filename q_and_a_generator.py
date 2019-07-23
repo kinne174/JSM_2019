@@ -4,6 +4,11 @@ import numpy as np
 import os
 import getpass
 
+
+# this function extracts the questions from the database provided by ARC, there are three subsets: training validation
+# and testing, the two difficulties are easy and challenging, each item in the list contains an id, the plain text
+# of the question, the plain text of the possible answers and which answer is correct (when combining the labels and
+# answer items)
 def get_qa_info(difficulty, subset, special='', limit=0):
     limit_bool = True if np.bool(limit) else False
     if getpass.getuser() == 'Mitch':
@@ -23,7 +28,6 @@ def get_qa_info(difficulty, subset, special='', limit=0):
             for dic in json_lines.reader(f):
                 # only one dict for some reason
                 for id, item in dic.items():
-                    # id = item['id']
                     question = item['question']
                     choices_text = item['choices_text']
                     choices_labels = item['choices_labels']

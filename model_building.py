@@ -50,29 +50,27 @@ class GCNLayer(nn.Module):
         # get the result node features
         h = g.ndata.pop('h')
         # perform linear transformation
-        # return self.linear(h)
         # g.ndata['h'] = self.linear(h)
         return self.linear(h)
-
-        # return g, h
 
 class GCN(nn.Module):
     def __init__(self, in_feats, hidden_size, out_feats):
         super(GCN, self).__init__()
-        self.gcn1 = GCNLayer(in_feats, out_feats)
-        # self.gcn2 = GCNLayer(hidden_size, out_feats)
+        # can toggle this to use one or two message passing
+        self.gcn1 = GCNLayer(in_feats, hidden_size)
+        self.gcn2 = GCNLayer(hidden_size, out_feats)
 
     def forward(self, g, inputs):
         h = self.gcn1(g, inputs)
-        # h = torch.relu(h)
-        # h = self.gcn2(g, h)
+        h = torch.tanh(h)
+        h = self.gcn2(g, h)
         g.ndata['h'] = h
         return g
 
 class LSTM_sentences(nn.Module):
-
     def __init__(self, embedding_dim, hidden_dim):
         super(LSTM_sentences, self).__init__()
+        # convert word embeddings to a sentence embedding
         # self.hidden_dim = hidden_dim  # dimension of eventual sentence embeddings
         self.lstm = nn.LSTM(embedding_dim, hidden_dim)
 
@@ -82,10 +80,10 @@ class LSTM_sentences(nn.Module):
 
 class sentence_classifier(nn.Module):
     def __init__(self, sentence_dim, hidden_dim, answer_dim):
+        # classify the sentences into a score, higher the better, simple MLP
         super(sentence_classifier, self).__init__()
         self.linear1 = nn.Linear(sentence_dim, hidden_dim)
         self.linear2 = nn.Linear(hidden_dim, answer_dim)
-
 
     def forward(self, sentence):
         h = self.linear1(sentence)
@@ -95,6 +93,7 @@ class sentence_classifier(nn.Module):
 
 class GCN_LSTM(nn.Module):
     def __init__(self, embedding_dim, gn_hidden_dim1, gn_hidden_dim2, lstm_hidden_dim, answer_hidden_dim, answer_dim):
+        # combining all parts
         super(GCN_LSTM, self).__init__()
 
         self.GCN = GCN(in_feats=embedding_dim, hidden_size=gn_hidden_dim1, out_feats=gn_hidden_dim2)
@@ -103,6 +102,7 @@ class GCN_LSTM(nn.Module):
 
     def forward(self, g, inputs, sentence_idx_list):
 
+        # message passing
         g = self.GCN(g, inputs)
 
         scores = torch.empty((len(sentence_idx_list), 4))
@@ -110,9 +110,9 @@ class GCN_LSTM(nn.Module):
 
             assert len(sentence_grouping) == 4
 
-            # ammend this to handle more than just four sentences, should be able to handle groups of four
-
+            # for each selection of four options...
             for jj in range(4):
+                # extract word embeddings, create sentence embedding and score
                 word_embeds = g.nodes[sentence_grouping[jj]].data['h']
 
                 sentence_embed = self.LSTM(word_embeds)
@@ -123,6 +123,7 @@ class GCN_LSTM(nn.Module):
 
         return scores
 
+# used to time runs
 @contextmanager
 def elapsed_timer():
     start = default_timer()
@@ -163,6 +164,7 @@ if __name__ == '__main__':
     # dict of arguments
     args = vars(parser.parse_args())
 
+    # to run on my laptop and university server
     if getpass.getuser() == 'Mitch':
         os.chdir('C:/Users/Mitch/PycharmProjects')
     else:
@@ -180,6 +182,8 @@ if __name__ == '__main__':
         f.write('START: {}\n\n'.format(datetime.now()))
         f.write('Creating sentence ids and graph network...')
 
+    # extract sentence information from corpus and from question and answers
+    # build the graph with appropriate edges and node embeddings
     with elapsed_timer() as elapsed:
         unique_word_idx, word_vectors, sentence_idx, co_occ_list, word_idx = \
             get_idx(sentences_filename=args['corpus_fn'], spacy_language='en_core_web_md', threshold=args['threshold'])
@@ -201,17 +205,20 @@ if __name__ == '__main__':
     params = network.parameters()
     optimizer = torch.optim.Adam(params, lr=args['learning_rate'])
 
+    # number of sentences to use in training
     num_sentences_per_epoch = args['num_sentences']
     prop_QA = args['QA_proportion']
 
+    # when evaluating on true questions and answers, how many of the training set to include and which ones
+    # should be left out for testing
     test_indices = list(range(6))
     indices_to_select_from = np.array([ind for ind in range(len(q_and_a_idx)) if ind not in test_indices])
     training_indices = list(np.random.permutation(indices_to_select_from)[:15])
 
-    all_logits = []
     for epoch in range(args['num_epochs']):
         # network.zero_grad()
 
+        # extract which sentences to train on, part from corpus part from question answers
         # insert word selection here, labels will be the same for each 4-tuple (correct, wrong, wrong, wrong)
         training_sentences = word_selector(corpus_sentences=sentence_idx, QA_sentences=q_and_a_idx,
                                            num_examples=num_sentences_per_epoch, prop_QA=prop_QA,
@@ -221,9 +228,9 @@ if __name__ == '__main__':
         training_labels = torch.tensor([0]*num_sentences_per_epoch)
 
         with elapsed_timer() as elapsed:
+            # extract logits and softmax them, then back propagate
             logits = network(g=G, inputs=G_ndata, sentence_idx_list=training_sentences)
 
-            all_logits.append(logits.detach())
             logp = F.log_softmax(input=logits, dim=1)
             loss = loss_function(logp, training_labels)
 
@@ -240,6 +247,7 @@ if __name__ == '__main__':
         print('Epoch %d | Loss: %.4f' % (epoch, loss.item()))
         print('Elapsed time: {}'.format(duration))
 
+        # intermediate validation testing to just get an idea of how the model is doing
         if epoch is not 0 and epoch % args['evaluate_every'] == 0:
             all_indices = test_indices + training_indices
             test_questions = test_word_selector(QA_sentences=q_and_a_idx, which_examples=all_indices)
@@ -259,12 +267,6 @@ if __name__ == '__main__':
                 f.write('\n')
 
     # TODO at the end evaluate on VALIDATION
-
-
-
-
-
-
 
 # TODO add a breaking character in between questions and answers, breaking character/embedding for LSTM only not clear why it is needed
 # TODO figure out a way to put this on the UMN computers, update all files again before running

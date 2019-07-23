@@ -18,6 +18,7 @@ def word_selector(corpus_sentences, QA_sentences, num_examples, prop_QA, leave_o
     indices_to_select_from = np.array([ind for ind in range(len(QA_sentences)) if ind not in leave_out_QA_indices])
     QA_indices = np.random.permutation(indices_to_select_from)[:num_QA_examples]
 
+    # extract the questions and answers from list based on random indices selected
     QA_combined = []
     for QA_i in QA_indices:
         current_question = QA_sentences[QA_i].question
@@ -25,13 +26,16 @@ def word_selector(corpus_sentences, QA_sentences, num_examples, prop_QA, leave_o
         for a in QA_sentences[QA_i].answers:
             current_QA_words.append(current_question + a)
 
+        # sort so that the correct answer is first
         current_QA_words = [qa for _, qa in sorted(zip(QA_sentences[QA_i].labels, current_QA_words), key= lambda x: x[0], reverse=True)]
         QA_combined.append(current_QA_words)
 
+    # extract sentences from corpus, first half of sentence is used and then three random other sentences the second half
+    # is used, the hope is that the model can learn which sentence has the correct information to end the sentence
+    # whereas all others the information does not connect, can also be changed to just randomly replace words
     corpus_combined = []
     corpus_iter = iter(np.random.permutation(np.arange(len(corpus_sentences))))
     while len(corpus_combined) < num_corpus_examples:
-    # for corpus_i in corpus_indices:
         corpus_i = next(corpus_iter)
         correct_sentence = corpus_sentences[corpus_i]
         if len(correct_sentence) <= 4:
@@ -51,8 +55,9 @@ def word_selector(corpus_sentences, QA_sentences, num_examples, prop_QA, leave_o
 
     return all_words
 
-def test_word_selector(QA_sentences, which_examples):
 
+def test_word_selector(QA_sentences, which_examples):
+    # useful for testing the model every so often with only questions and answers, same logic as above
     assert isinstance(which_examples, list)
     assert isinstance(QA_sentences, list)
     assert len(which_examples) <= len(QA_sentences)

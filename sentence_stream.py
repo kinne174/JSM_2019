@@ -1,60 +1,3 @@
-# nlp = spacy.load('en_core_web_md', disable=['ner', 'parser'])
-# doc = nlp(u'Apple is looking at buying U.K. startup for $1 billion')
-
-# for token in doc:
-#     print(token.text, token.lemma_, token.pos_, token.tag_, token.dep_,
-#             token.shape_, token.is_alpha, token.is_stop)
-# for token in doc:
-#     print(token.text, token.has_vector, token.vector_norm, token.is_oov)
-
-# for token1 in doc:
-#     for token2 in doc:
-#         print(token1.text, token2.text, token1.similarity(token2))
-
-# nlp = spacy.load("en_core_web_sm")
-# doc = nlp(u"Hello, world. Here are two sentences.")
-# print([t.text for t in doc])
-#
-# from spacy.tokens import Span
-#
-# doc = nlp(u"FB is hiring a new VP of global policy")
-# doc.ents = [Span(doc, 0, 1, label=doc.vocab.strings[u"ORG"])]
-# for ent in doc.ents:
-#     print(ent.text, ent.start_char, ent.end_char, ent.label_)
-
-# nlp = spacy.load("en_core_web_md")
-# doc = nlp(u"Apple and banana are similar. Pasta and hippo aren't.")
-#
-# apple = doc[0]
-# banana = doc[2]
-# pasta = doc[6]
-# hippo = doc[8]
-#
-# print("apple <-> banana", apple.similarity(banana))
-# print("pasta <-> hippo", pasta.similarity(hippo))
-# print(apple.has_vector, banana.has_vector, pasta.has_vector, hippo.has_vector)
-
-# start = time.time()
-# for _ in range(1000):
-#     doc = nlp(u"Peach emoji is where it has always been. Peach is the superior "
-#               u"emoji. It's outranking eggplant 🍑 ")
-# print(time.time() - start)
-# # sentences = list(doc.sents)
-# # first_sentence = sentences[0]
-# for token in doc:
-#     print(token.text, token.lemma_, token.pos_, token.is_stop)
-# print(doc[0].text)          # 'Peach'
-# print(doc[1].text)          # 'emoji'
-# print(doc[-1].text)         # '🍑'
-# print(doc[17:19].text)      # 'outranking eggplant'
-#
-# noun_chunks = list(doc.noun_chunks)
-# print(noun_chunks[0].text)  # 'Peach emoji'
-#
-# sentences = list(doc.sents)
-# assert len(sentences) == 3
-# print(sentences[1].text)
-
 import spacy
 import numpy as np
 import json
@@ -68,14 +11,13 @@ from q_and_a_generator import get_qa_info
 '''
 based on a .txt file of sentences separated by '\n' run through them and save them to a list of spacy Docs. Then can get
 a count of lemmitizations in each sentence and how those counts relate to interword counts to get how to define edges
-in the graph network, also need a way to define the vector-nodes in the graph network
-
-7/2 - wrap these in a function that slowly builds up the idx by taking chunks of the sentences and gets counts etc.
-      instead of loading everything at once
+in the graph network
 '''
 
-
+# this function takes in a corpus of sentences and converts each of them to a list of numbers that represent the words
+# then based on the co occurance returns which words are paired, this is how edges are defined in the graph network
 def get_idx(sentences_filename='ARC/visualization/test_dataset.txt', spacy_language='en_core_web_sm', threshold=0.5):
+    # load interpreter
     nlp = spacy.load(spacy_language, disable=['ner', 'parser'])
 
     # load in corpus
@@ -83,13 +25,14 @@ def get_idx(sentences_filename='ARC/visualization/test_dataset.txt', spacy_langu
         os.chdir('C:/Users/Mitch/PycharmProjects')
     else:
         os.chdir('/home/kinne174/private/PythonProjects')
-    # sentences_filename = 'ARC/visualization/moon_dataset.txt'
 
     assert 0. <= threshold <= 1.
 
+    # total lines used to exit at the right time
     num_lines = sum([1 for _ in codecs.open(sentences_filename, 'r', encoding='utf-8', errors='ignore')])
 
     def doc_to_spans(list_of_texts, join_string=' ||| '):
+        # convert list of text to lemmas using work around
         # https://towardsdatascience.com/a-couple-tricks-for-using-spacy-at-scale-54affd8326cf
         num_iterations = int(np.ceil(len(list_of_texts) / 1000))
         new_docs = []
@@ -119,7 +62,8 @@ def get_idx(sentences_filename='ARC/visualization/test_dataset.txt', spacy_langu
         return new_docs
 
     def sentence_and_word_idx(all_docs, word_idx, sentence_idx):
-        # create a dictionary with index: lemma pairs and sentences: [indices] pairs
+        # create a dictionary with index: lemma / lemma: index and sentences: [indices]
+        # this is called multiple times until all sentences are accounted for
         flattened_docs = [t for doc in all_docs for t in set(doc)]
 
         current_word_ind = len(word_idx)
@@ -150,7 +94,6 @@ def get_idx(sentences_filename='ARC/visualization/test_dataset.txt', spacy_langu
         return co_occ
 
     with codecs.open(sentences_filename, 'r', encoding='utf-8', errors='ignore') as corpus:
-        # text_list = corpus.read().splitlines()
         text_list = []
         word_idx = {}
         sentence_idx = {}
@@ -158,6 +101,7 @@ def get_idx(sentences_filename='ARC/visualization/test_dataset.txt', spacy_langu
         for i, line in enumerate(corpus):
             text_list.append(line.strip())
 
+            # spacy can only handle so many characters so only take the text 1000 lines at a time to be safe
             if (i % 1000 == 0 and i is not 0) or (len(text_list) == num_lines - i//1000):
 
                 docs = doc_to_spans(text_list)
@@ -172,6 +116,7 @@ def get_idx(sentences_filename='ARC/visualization/test_dataset.txt', spacy_langu
 
     co_occ_list = [key for key, val in co_occ_dict.items() if val >= threshold]
 
+    # based on words selected by co occurance retrieve only the ones to keep
     unique_word_idx = list(set([idx for t in co_occ_list for idx in t]))
     unique_word_vectors = {idx: nlp.vocab.get_vector(word_idx[idx]) for idx in unique_word_idx}
 
@@ -190,7 +135,10 @@ def get_idx(sentences_filename='ARC/visualization/test_dataset.txt', spacy_langu
     return unique_word_idx, unique_word_vectors, updated_sentence_idx, co_occ_list, updated_word_idx
 
 
+# this is run after the corpus get_idx so that no new words are added, this function uses the word to index dict that
+# was created above
 def get_QandA_idx(word_idx, difficulty, subset, spacy_language='en_core_web_sm'):
+    # load intepreter
     nlp = spacy.load(spacy_language, disable=['ner', 'parser'])
 
     if not isinstance(difficulty, list) and difficulty is not 'all':
@@ -198,6 +146,7 @@ def get_QandA_idx(word_idx, difficulty, subset, spacy_language='en_core_web_sm')
     if not isinstance(subset, list) and subset is not 'all':
         subset = [subset]
 
+    # depending on combination extract appropriate question and answer sentences
     if difficulty is 'all' and subset is 'all':
         subsets = ['TRAIN', 'TEST', 'VALIDATION']
         difficulties = ['EASY', 'CHALLENGE']
@@ -260,6 +209,8 @@ def get_QandA_idx(word_idx, difficulty, subset, spacy_language='en_core_web_sm')
             new_docs.extend([all_docs[(i + 1 if i > 0 else i):j] for i, j in zip([0] + split_inds[:-1], split_inds)])
         return new_docs
 
+    # similar to above, stream through sentences converting them to tokens and save them using corpus unique words
+    # retrieved
     all_text = []
     labels = []
     for nt in qa_named_tuples:
@@ -282,6 +233,7 @@ def get_QandA_idx(word_idx, difficulty, subset, spacy_language='en_core_web_sm')
     Q_and_A_Document = namedtuple('Q_and_A_Document', 'question answers labels')
     Q_and_A_docs = []
 
+    # separate the questions and answers since above they were all smashed together
     question_now = True
     answers = []
     ii = 0
