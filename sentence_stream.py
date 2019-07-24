@@ -26,6 +26,9 @@ def get_idx(sentences_filename='ARC/visualization/test_dataset.txt', spacy_langu
     else:
         os.chdir('/home/kinne174/private/PythonProjects')
 
+    sentence_idx_filename = 'JSM_2019/dicts/sentence_idx.json'
+    word_idx_filename = 'JSM_2019/dicts/word_idx.json'
+
     assert 0. <= threshold <= 1.
 
     # total lines used to exit at the right time
@@ -93,6 +96,11 @@ def get_idx(sentences_filename='ARC/visualization/test_dataset.txt', spacy_langu
             for k in joined_lemma_counter.keys()}
         return co_occ
 
+    if os.path.exists(sentence_idx_filename) and os.path.exists(word_idx_filename):
+        with open(sentence_idx_filename, 'r') as fs:
+            sentence_idx = json.load(fs)
+        with open(word_idx_filename, 'r') as fw:
+            word_idx = json.load(fw)
     with codecs.open(sentences_filename, 'r', encoding='utf-8', errors='ignore') as corpus:
         text_list = []
         word_idx = {}
@@ -111,6 +119,15 @@ def get_idx(sentences_filename='ARC/visualization/test_dataset.txt', spacy_langu
                 word_idx, sentence_idx = sentence_and_word_idx(filtered_docs, word_idx, sentence_idx)
 
                 text_list = []
+
+            if len(sentence_idx) >= 10000000: # ten million
+                with open(sentence_idx_filename, 'w') as fs:
+                    json.dump(sentence_idx, fs)
+
+                with open(word_idx_filename, 'w') as fw:
+                    json.dump(word_idx, fw)
+
+                break
 
     co_occ_dict = co_occurance(list(sentence_idx.values()))
 
@@ -160,7 +177,7 @@ def get_QandA_idx(word_idx, difficulty, subset, spacy_language='en_core_web_sm')
 
     elif subset is 'all':
         subsets = ['TRAIN', 'TEST', 'VALIDATION']
-        if difficulty in ['EASY', 'CHALLENGE']:
+        if all([diff in ['EASY', 'CHALLENGE'] for diff in difficulty]):
             combinations = list(product(subsets, difficulty))
             qa_named_tuples = []
 
@@ -171,7 +188,7 @@ def get_QandA_idx(word_idx, difficulty, subset, spacy_language='en_core_web_sm')
 
     elif difficulty is 'all':
         difficulties = ['EASY', 'CHALLENGE']
-        if subset in ['TRAIN', 'TEST', 'VALIDATION']:
+        if all([sub in ['TRAIN', 'TEST', 'VALIDATION'] for sub in subset]):
             combinations = list(product(subset, difficulties))
             qa_named_tuples = []
 
@@ -257,9 +274,9 @@ def get_QandA_idx(word_idx, difficulty, subset, spacy_language='en_core_web_sm')
     return Q_and_A_docs
 
 if __name__ == '__main__':
-   uwi, uwv, si, col, wids = get_idx(sentences_filename='ARC/visualization/moon_dataset.txt', spacy_language='en_core_web_sm', threshold=0.9)
+   uwi, uwv, si, col, wids = get_idx(sentences_filename='ARC/visualization/test_dataset.txt', spacy_language='en_core_web_sm', threshold=0.9)
 
-   q_and_a_idx = get_QandA_idx(word_idx=wids, difficulty='all', subset='all')
+   q_and_a_idx = get_QandA_idx(word_idx=wids, difficulty='EASY', subset='all')
 
 
 
